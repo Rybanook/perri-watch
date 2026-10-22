@@ -21,7 +21,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      # The branch's CURRENT head, not the commit the run was triggered on: a run queued behind another must read the
+      # state that one wrote (the first test, Oct 22: two runs both saw "misses 0").
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - name: check
         env:
           URL: ${{ github.event.inputs.url || 'https://api.getperri.com/health' }}
@@ -35,4 +39,7 @@ jobs:
           git config user.name "perri-watch"
           git config user.email "perri-watch@users.noreply.github.com"
           git add state.json heartbeat.txt
-          if ! git diff --cached --quiet; then git commit -qm "watch" && git push -q; fi
+          if ! git diff --cached --quiet; then
+            git commit -qm "watch"
+            for i in 1 2 3; do git push -q && break; git pull -q --rebase origin main; done
+          fi
