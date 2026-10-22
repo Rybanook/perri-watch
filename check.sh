@@ -5,12 +5,15 @@ set -u
 STATE=state.json
 [ -f "$STATE" ] || echo '{"misses":0,"down":false,"since":null}' > "$STATE"
 misses=$(jq -r '.misses' "$STATE"); down=$(jq -r '.down' "$STATE"); since=$(jq -r '.since' "$STATE")
-now=$(date -u +%Y-%m-%dT%H:%MZ)
+now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 body=$(curl -s -m 20 -w '\n%{http_code}' "$URL" 2>/dev/null || true)
 code=$(printf '%s' "$body" | tail -n1)
 healthy=false
 if [ "$code" = "200" ] && printf '%s' "$body" | sed '$d' | jq -e '.ok == true' >/dev/null 2>&1; then healthy=true; fi
+
+# His time, the way he reads it (his 4:09 PM, Oct 22): Pacific, "4:05 PM". The state keeps UTC.
+local_time() { TZ=America/Vancouver date -d "$1" +'%-I:%M %p' 2>/dev/null || echo "$1"; }
 
 text() {   # one SMS through the existing Twilio account; the response is discarded, never printed
   curl -s -o /dev/null -w '%{http_code}' -X POST "https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json" \
@@ -19,9 +22,9 @@ text() {   # one SMS through the existing Twilio account; the response is discar
 }
 
 if [ "$healthy" = true ]; then
-  echo "ok"
+  echo "ok at $(local_time "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
   if [ "$down" = true ]; then
-    sent=$(text "Perri is back: ${now}.")
+    sent=$(text "Perri is back, $(local_time "$(date -u +%Y-%m-%dT%H:%M:%SZ)").")
     echo "texted back (${sent})"
   fi
   echo '{"misses":0,"down":false,"since":null}' > "$STATE"
@@ -29,7 +32,7 @@ else
   misses=$((misses + 1)); [ "$since" = "null" ] && since="$now"
   echo "miss ${misses}"
   if [ "$misses" -ge 2 ] && [ "$down" != true ]; then
-    sent=$(text "Perri is down: /health failed twice since ${since}.")
+    sent=$(text "Perri is down since $(local_time "${since}"). Two checks failed.")
     echo "texted down (${sent})"
     down=true
   fi
