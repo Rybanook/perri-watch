@@ -1,0 +1,38 @@
+# perri-watch — the outside watcher (his word, 3:03 PM Oct 22; the incident of 13:03–13:28 PDT that day).
+# Runs on GitHub, not on porter or porter-runtime, so it can still speak when they cannot.
+# Every 5 minutes: GET /health with a 20 s timeout. After 2 misses in a row, ONE text; when it answers again, ONE text.
+# Nothing in between. The logs are public: no secret and no response body is ever printed.
+name: watch
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Check this URL instead, once (the witness test)'
+        required: false
+permissions:
+  contents: write
+concurrency:
+  group: watch
+  cancel-in-progress: false
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: check
+        env:
+          URL: ${{ github.event.inputs.url || 'https://api.getperri.com/health' }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          WATCH_FROM: ${{ secrets.WATCH_FROM }}
+          WATCH_TO: ${{ secrets.WATCH_TO }}
+        run: sh ./check.sh
+      - name: keep the state
+        run: |
+          git config user.name "perri-watch"
+          git config user.email "perri-watch@users.noreply.github.com"
+          git add state.json heartbeat.txt
+          if ! git diff --cached --quiet; then git commit -qm "watch" && git push -q; fi
